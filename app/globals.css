@@ -1,0 +1,522 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/* `dark:` keys off a `.dark` class on <html> so the manual theme toggle
+   (ThemeContext) wins over the OS preference. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ───────────────────────────────────────────────────────────────────────
+   QazvuCart design language: "the market stall"
+
+   Warm paper instead of white, ink instead of black, one leaf green, one
+   marigold for price stickers and a chili red for sale marks. Surfaces are
+   flat and ruled like a printed catalogue (hairlines, not drop shadows),
+   headlines are set in a chunky serif, numbers in a mono, and a few small
+   hand-made touches (tilted stickers, scribbled underlines, a perforated
+   deals ticket, a torn receipt) keep it from looking machine-assembled.
+   ─────────────────────────────────────────────────────────────────────── */
+@theme {
+  --font-sans: var(--font-hanken), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: var(--font-young), "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+  --font-hand: var(--font-caveat), "Segoe Print", "Bradley Hand", cursive;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* Leaf green. 800 is the primary button colour; 100-300 are soft fills. */
+  --color-brand-50: #f0f6ec;
+  --color-brand-100: #dfebd6;
+  --color-brand-200: #c0d8b2;
+  --color-brand-300: #97c283;
+  --color-brand-400: #6fa85a;
+  --color-brand-500: #4f8d40;
+  --color-brand-600: #3b7433;
+  --color-brand-700: #2e5f2b;
+  --color-brand-800: #244c24;
+  --color-brand-900: #1a381c;
+  --color-brand-950: #102410;
+
+  /* Marigold: price stickers, highlights, the deals ticket */
+  --color-marigold-50: #fdf6dc;
+  --color-marigold-100: #fbeab3;
+  --color-marigold-200: #f8dc86;
+  --color-marigold-300: #f4cb55;
+  --color-marigold-400: #efb931;
+  --color-marigold-500: #e2a210;
+
+  /* Chili: sale marks, destructive actions */
+  --color-chili-100: #f7dccf;
+  --color-chili-500: #d1442a;
+  --color-chili-600: #b53a22;
+  --color-chili-700: #8f2d1a;
+
+  /* Warm stone neutrals (paper, not steel) */
+  --color-neutral-50: #faf7f0;
+  --color-neutral-100: #f2ede2;
+  --color-neutral-200: #e5dfd0;
+  --color-neutral-300: #d1c9b7;
+  --color-neutral-400: #a29a87;
+  --color-neutral-500: #77705f;
+  --color-neutral-600: #585244;
+  --color-neutral-700: #403c31;
+  --color-neutral-800: #2a2822;
+  --color-neutral-900: #1b1c17;
+  --color-neutral-950: #0f100c;
+
+  /* Theme-aware surfaces (flip with .dark) */
+  --color-paper: var(--page);
+  --color-card: var(--card);
+  --color-ink: var(--ink);
+  --color-rule: var(--rule);
+
+  /* Sharper corners everywhere: this is paper, not bubbles */
+  --radius-md: 0.375rem;
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.5rem;
+  --radius-2xl: 0.625rem;
+  --radius-3xl: 0.75rem;
+
+  /* Printed, not floating. soft = a pencil line; lift = an offset print;
+     glow = the tactile bottom edge of a pressed button. */
+  --shadow-soft: 0 1px 0 var(--rule);
+  --shadow-lift: 4px 4px 0 var(--ink);
+  --shadow-glow: 0 2px 0 rgb(0 0 0 / 0.28);
+  --shadow-stamp: 3px 3px 0 var(--ink);
+  --shadow-press: 0 2px 0 rgb(0 0 0 / 0.28);
+
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@layer base {
+  :root {
+    --page: #f3eee3;
+    --card: #fbf8f0;
+    --ink: #1b231d;
+    --rule: rgb(27 35 29 / 0.16);
+  }
+  .dark {
+    --page: #0f1511;
+    --card: #161e18;
+    --ink: #efe9da;
+    --rule: rgb(239 233 218 / 0.16);
+  }
+
+  html {
+    color-scheme: light dark;
+    overflow-x: hidden;
+    overscroll-behavior-x: none;
+    width: 100%;
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+  }
+  html.dark {
+    color-scheme: dark;
+  }
+
+  body {
+    background-color: var(--page);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    letter-spacing: -0.003em;
+    line-height: 1.5;
+    overflow-x: hidden;
+    overscroll-behavior-x: none;
+    width: 100%;
+    max-width: 100vw;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Paper grain. Static, fixed, barely there. */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    opacity: 0.5;
+    mix-blend-mode: multiply;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.35  0 0 0 0 0.3  0 0 0 0 0.2  0 0 0 0.09 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  }
+  .dark body::before {
+    opacity: 0.35;
+    mix-blend-mode: screen;
+  }
+
+  /* Headlines are set in the display serif at one weight (it has no bold,
+     and faking one looks cheap). h3 and below stay in the sans. */
+  h1, h2 {
+    font-family: var(--font-display);
+    font-weight: 400;
+    letter-spacing: -0.012em;
+    line-height: 1.04;
+    text-wrap: balance;
+  }
+  h3, h4 {
+    text-wrap: balance;
+  }
+  p, span, a, li, td, th, h1, h2, h3, h4, h5, h6 {
+    overflow-wrap: break-word;
+  }
+  pre, code { max-width: 100%; overflow-x: auto; }
+  img, svg, video, canvas { max-width: 100%; height: auto; }
+
+  ::selection { background: var(--color-marigold-300); color: #1b231d; }
+
+  :focus-visible {
+    outline: 2px solid var(--ink);
+    outline-offset: 3px;
+    border-radius: 0.25rem;
+  }
+
+  /* Links inside running copy get a real underline */
+  a { text-underline-offset: 3px; }
+
+  input, select, textarea {
+    font-family: inherit;
+  }
+  input[type="checkbox"], input[type="radio"] {
+    accent-color: var(--color-brand-800);
+  }
+
+  * { scrollbar-width: thin; scrollbar-color: rgb(36 76 36 / 0.45) transparent; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: rgb(36 76 36 / 0.32); border-radius: 999px; border: 3px solid transparent; background-clip: content-box; }
+  ::-webkit-scrollbar-thumb:hover { background: rgb(36 76 36 / 0.55); background-clip: content-box; border: 3px solid transparent; }
+}
+
+/* Big filled buttons that used to be pills become firm rectangles. Icon
+   buttons, avatars, dots and badges are untouched because they never
+   combine a fixed height with horizontal padding. */
+@layer utilities {
+  :where(a, button)[class*="rounded-full"][class*="px-"][class*=" h-1"],
+  :where(a, button)[class*="rounded-full"][class*="px-"][class*=" h-9"] {
+    border-radius: 0.375rem;
+  }
+}
+
+/* ───────────────────────── Reusable utilities ───────────────────────── */
+
+/* Kept for the older screens: solid paper, no frosted glass. */
+@utility glass {
+  background-color: color-mix(in srgb, var(--page) 94%, transparent);
+  border-color: var(--rule);
+}
+
+/* A flat card: hairline border, paper-card fill, no shadow. */
+@utility surface {
+  background-color: var(--card);
+  border: 1px solid var(--rule);
+  border-radius: 0.5rem;
+}
+
+/* Highlighter instead of gradient text */
+@utility text-gradient {
+  color: inherit;
+  background-image: linear-gradient(transparent 62%, var(--color-marigold-300) 62% 92%, transparent 92%);
+  padding: 0 0.12em;
+  margin: 0 -0.12em;
+}
+
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar { display: none; }
+}
+
+@utility force-dark-safe {
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
+  isolation: isolate;
+}
+
+/* Small caps label in mono, used as an eyebrow above headings */
+@utility eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  line-height: 1;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-weight: 500;
+}
+
+/* Numerals that line up */
+@utility figures {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+/* A tilted price / discount sticker */
+@utility sticker {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.2rem 0.5rem;
+  background: var(--color-marigold-300);
+  color: #1b231d;
+  border: 1.5px solid #1b231d;
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+  rotate: -3deg;
+  box-shadow: 2px 2px 0 #1b231d;
+}
+@utility sticker-chili {
+  background: var(--color-chili-500);
+  color: #fff8ee;
+}
+
+/* Hand-written margin note */
+@utility note {
+  font-family: var(--font-hand);
+  font-size: 1.25rem;
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+/* Hairline rules */
+@utility rule-t { border-top: 1px solid var(--rule); }
+@utility rule-b { border-bottom: 1px solid var(--rule); }
+@utility rule-y { border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); }
+
+/* A solid, slightly pressed primary button face */
+@utility btn-ink {
+  background: var(--ink);
+  color: var(--page);
+  box-shadow: 0 2px 0 rgb(0 0 0 / 0.28);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background-color 0.2s ease;
+  &:hover { transform: translateY(-1px); box-shadow: 0 3px 0 rgb(0 0 0 / 0.28); }
+  &:active { transform: translateY(1px); box-shadow: 0 0 0 rgb(0 0 0 / 0.28); }
+}
+
+/* Dotted leader between a label and its figure ("Electronics ……… 24") */
+@utility leader {
+  flex: 1;
+  min-width: 1rem;
+  align-self: end;
+  margin-bottom: 0.45em;
+  border-bottom: 2px dotted var(--rule);
+}
+
+/* Perforated coupon, used for the daily deals */
+@utility ticket {
+  position: relative;
+  background-color: var(--color-marigold-100);
+  color: #1b231d;
+  -webkit-mask:
+    radial-gradient(circle 11px at 0 50%, #0000 97%, #000) left / 51% 100% no-repeat,
+    radial-gradient(circle 11px at 100% 50%, #0000 97%, #000) right / 51% 100% no-repeat;
+  mask:
+    radial-gradient(circle 11px at 0 50%, #0000 97%, #000) left / 51% 100% no-repeat,
+    radial-gradient(circle 11px at 100% 50%, #0000 97%, #000) right / 51% 100% no-repeat;
+  &:where(.dark, .dark *) {
+    background-color: #2b2a1a;
+    color: var(--ink);
+  }
+}
+
+/* Till receipt with a torn bottom edge */
+@utility receipt {
+  position: relative;
+  background-color: var(--card);
+  margin-bottom: 9px;
+  &::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -9px;
+    height: 9px;
+    background:
+      linear-gradient(135deg, var(--card) 4.5px, transparent 0) 0 0 / 12px 9px,
+      linear-gradient(225deg, var(--card) 4.5px, transparent 0) 0 0 / 12px 9px;
+  }
+}
+
+/* Skeleton shimmer: a warm paper block, quietly pulsing */
+@utility shimmer-bg {
+  background-color: #e8e1d0;
+  background-image: linear-gradient(90deg, #e8e1d0 0%, #f3eee2 20%, #e8e1d0 40%, #e8e1d0 100%);
+  background-size: 200% 100%;
+  animation: shimmer-sweep 1.8s ease-in-out infinite;
+  &:where(.dark, .dark *) {
+    background-color: #1d2820;
+    background-image: linear-gradient(90deg, #1d2820 0%, #263329 20%, #1d2820 40%, #1d2820 100%);
+  }
+}
+
+@keyframes shimmer-sweep {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Fly-to-cart ghost + cart badge bump (used by lib/flyToCart + ProductCard) */
+@keyframes fly-to-cart {
+  0% { transform: translate(0, 0) scale(1) rotate(0); opacity: 1; }
+  70% { opacity: 1; }
+  100% { transform: var(--fly-translate) scale(0.15) rotate(12deg); opacity: 0; }
+}
+@utility animate-fly-to-cart {
+  animation: fly-to-cart 0.7s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+@keyframes cart-bump {
+  0%, 100% { transform: scale(1); }
+  35% { transform: scale(1.18); }
+  60% { transform: scale(0.95); }
+}
+@utility animate-cart-bump {
+  animation: cart-bump 0.4s ease-in-out;
+}
+
+/* Old effects, kept as harmless no-ops so untouched screens still compile */
+@utility animate-float-slow { animation: none; }
+@utility animate-pulse-glow { animation: none; }
+@utility card-spotlight { position: relative; }
+@utility shine-sweep { position: relative; overflow: hidden; }
+@utility bg-dots { background-image: none; }
+
+/* A slow ticker for the announcement strip */
+@keyframes ticker {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+@utility animate-ticker {
+  animation: ticker 38s linear infinite;
+  &:hover { animation-play-state: paused; }
+}
+
+/* Skeleton cards fade in one after another */
+@keyframes skeleton-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+@utility animate-skeleton-in {
+  animation: skeleton-in 0.4s var(--ease-out-expo) both;
+}
+
+/* Scribble that draws itself once */
+@keyframes scribble-draw {
+  from { stroke-dashoffset: 1; }
+  to { stroke-dashoffset: 0; }
+}
+@utility scribble {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: scribble-draw 0.9s cubic-bezier(0.65, 0, 0.35, 1) calc(var(--intro-offset) + var(--d, 0.5s)) forwards;
+}
+
+/* Category rows nudge right on hover, like running a finger down a list */
+@utility nudge {
+  transition: transform 0.25s var(--ease-out-expo), background-color 0.2s ease;
+  &:hover { transform: translateX(6px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .scribble { stroke-dashoffset: 0; }
+}
+
+/* ───────────────────────── Intro (first visit) ───────────────────────── */
+html.intro-skip .intro-root { display: none; }
+html.intro-active { overflow: hidden; }
+
+.intro-root {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  background: var(--page);
+  color: var(--ink);
+  cursor: pointer;
+  animation: intro-exit 0.8s var(--ease-out-expo) 2.2s forwards;
+}
+.intro-root[data-skip="true"] { animation: intro-exit 0.45s var(--ease-out-expo) 0s forwards; }
+.intro-stage { display: flex; flex-direction: column; align-items: center; gap: 0.9rem; padding: 1.5rem; text-align: center; }
+.intro-mark { width: 4rem; height: 4rem; color: var(--color-brand-800); }
+.dark .intro-mark { color: var(--color-brand-300); }
+.intro-draw { stroke-dasharray: 1; stroke-dashoffset: 1; animation: intro-draw 0.8s cubic-bezier(0.65, 0, 0.35, 1) 0.2s forwards; }
+.intro-draw-tail { animation-delay: 0.8s; animation-duration: 0.35s; stroke: var(--color-marigold-400); }
+.intro-word { overflow: hidden; padding-bottom: 0.2em; }
+.intro-word-inner {
+  display: block;
+  font-family: var(--font-display);
+  font-size: clamp(2.4rem, 7vw, 3.6rem);
+  line-height: 1;
+  letter-spacing: -0.015em;
+  transform: translateY(110%);
+  animation: intro-rise 0.7s var(--ease-out-expo) 0.85s forwards;
+}
+.intro-tag {
+  font-family: var(--font-hand);
+  font-size: 1.6rem;
+  line-height: 1;
+  color: var(--color-chili-600);
+  transform: rotate(-2deg);
+  opacity: 0;
+  animation: intro-fade 0.6s ease-out 1.35s forwards;
+}
+.intro-line {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 4px;
+  width: 100%;
+  background: var(--color-marigold-400);
+  transform-origin: left;
+  transform: scaleX(0);
+  animation: intro-progress 2s cubic-bezier(0.4, 0, 0.2, 1) 0.15s forwards;
+}
+.intro-cta {
+  margin-top: 0.6rem;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  opacity: 0;
+  animation: intro-fade 0.6s ease-out 1.6s forwards;
+}
+@keyframes intro-draw { to { stroke-dashoffset: 0; } }
+@keyframes intro-rise { to { transform: translateY(0); } }
+@keyframes intro-fade { to { opacity: 1; } }
+@keyframes intro-progress { to { transform: scaleX(1); } }
+@keyframes intro-exit {
+  from { clip-path: inset(0 0 0 0); visibility: visible; }
+  99% { visibility: visible; }
+  to { clip-path: inset(0 0 100% 0); visibility: hidden; }
+}
+
+/* ───────────────────────── Hero / page entrance ───────────────────────── */
+/* Hero entrances wait for the intro on a first visit, and play immediately otherwise. */
+:root { --intro-offset: 0s; }
+html:not(.intro-skip) { --intro-offset: 2.6s; }
+
+@keyframes hero-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+@utility hero-in { animation: hero-in 0.8s var(--ease-out-expo) calc(var(--intro-offset) + var(--d, 0s)) both; }
+
+/* Photos land on the page like prints dropped on a table: they settle into their tilt. */
+@keyframes print-in {
+  from { opacity: 0; transform: translateY(18px) rotate(calc(var(--tilt, 0deg) * 2.5)) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) rotate(var(--tilt, 0deg)) scale(1); }
+}
+@utility print-in {
+  animation: print-in 0.9s var(--ease-out-expo) calc(var(--intro-offset) + var(--d, 0s)) both;
+  transform: rotate(var(--tilt, 0deg));
+}
+
+/* Room for the mobile bottom tab bar */
+@utility pb-safe-nav {
+  padding-bottom: calc(4.75rem + env(safe-area-inset-bottom));
+  @media (min-width: 1024px) { padding-bottom: 0; }
+}
+@utility pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+
+/* The display serif only has one weight; stop utility classes (font-bold,
+   font-semibold) from faking a heavier one on headlines. */
+h1, h2 { font-weight: 400 !important; }

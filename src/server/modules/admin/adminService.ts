@@ -1,0 +1,376 @@
+import { desc, eq, gte, sql } from 'drizzle-orm';
+import { db } from '@/src/db';
+import {
+  orders,
+  orderItems,
+  products,
+  users,
+  categories,
+  sellers,
+  sellerOrders,
+  productImages,
+} from '@/src/db/schema';
+import { OrderService } from '../orders/orderService';
+import { SellerAccountService } from '../sellers/sellerAccountService';
+
+export class AdminService {
+  static async getDashboardStats() {
+    const [orderStats] = await db
+      .select({
+        totalOrders: sql<number>`count(*)::int`,
+        totalRevenue: sql<number>`coalesce(sum(${orders.total}), 0)::int`,
+      })
+      .from(orders)
+      .where(sql`${orders.paymentStatus} = 'PAID'`);
+
+    const [userStats] = await db.select({ totalUsers: sql<number>`count(*)::int` }).from(users).where(eq(users.role, 'CUSTOMER'));
+    const [sellerStats] = await db.select({ activeSellers: sql<number>`count(*)::int` }).from(sellers).where(eq(sellers.status, 'APPROVED'));
+    const [pendingSellerStats] = await db.select({ count: sql<number>`count(*)::int` }).from(sellers).where(eq(sellers.status, 'PENDING'));
+    // Platform commission actually earned: delivered parcels that haven't been voided.
+    const [commissionStats] = await db
+      .select({ total: sql<number>`coalesce(sum(${sellerOrders.commissionAmount}), 0)::int` })
+      .from(sellerOrders)
+      .where(sql`${sellerOrders.status} = 'DELIVERED' AND ${sellerOrders.settlementStatus} <> 'LEGACY'`);
+    const [productStats] = await db.select({ totalProducts: sql<number>`count(*)::int` }).from(products).where(eq(products.status, 'ACTIVE'));
+
+    const [pendingStats] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(orders)
+      .where(sql`${orders.status} NOT IN ('DELIVERED', 'CANCELLED', 'RETURNED')`);
+
+    const [deliveredStats] = await db.select({ count: sql<number>`count(*)::int` }).from(orders).where(eq(orders.status, 'DELIVERED'));
+
+    const [lowStockStats] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(products)
+      .where(sql`${products.stock} <= 5 AND ${products.status} = 'ACTIVE'`);
+
+    const recentOrders = await db
+      .select({
+        id: orders.id,
+        orderNumber: orders.orderNumber,
+        customerName: users.username,
+        customerEmail: users.email,
+        totalAmount: orders.total,
+        status: orders.status,
+        paymentMethod: orders.paymentMethod,
+        paymentStatus: orders.paymentStatus,
+        createdAt: orders.createdAt,
+      })
+      .from(orders)
+      .innerJoin(users, eq(orders.userId, users.id))
+      .orderBy(desc(orders.id))
+      .limit(10);
+
+    const salesByCategory = await db
+      .select({ categoryName: categories.name, productCount: sql<number>`count(${products.id})::int` })
+      .from(categories)
+      .leftJoin(products, eq(products.categoryId, categories.id))
+      .groupBy(categories.id, categories.name)
+      .orderBy(categories.displayOrder);
+
+    return {
+      totalRevenue: orderStats?.totalRevenue || 0,
+      totalOrders: orderStats?.totalOrders || 0,
+      totalProducts: productStats?.totalProducts || 0,
+      totalUsers: userStats?.totalUsers || 0,
+      activeSellers: sellerStats?.activeSellers || 0,
+      pendingSellerApplications: pendingSellerStats?.count || 0,
+      platformCommissionEarned: commissionStats?.total || 0,
+      pendingOrdersCount: pendingStats?.count || 0,
+      deliveredOrdersCount: deliveredStats?.count || 0,
+      lowStockProductsCount: lowStockStats?.count || 0,
+      recentOrders: recentOrders.map((o) => ({ ...o, createdAt: o.createdAt.toISOString() })),
+      salesByCategory,
+    };
+  }
+
+  static async getAllOrders() {
+    const rows = await db
+      .select({
+        id: orders.id,
+        orderNumber: orders.orderNumber,
+        customerName: users.username,
+        customerEmail: users.email,
+        customerPhone: users.phone,
+        subtotal: orders.subtotal,
+        deliveryFee: orders.deliveryFee,
+        totalAmount: orders.total,
+        status: orders.status,
+        paymentMethod: orders.paymentMethod,
+        paymentStatus: orders.paymentStatus,
+        estimatedDeliveryDate: orders.estimatedDeliveryDate,
+        createdAt: orders.createdAt,
+      })
+      .from(orders)
+      .innerJoin(users, eq(orders.userId, users.id))
+      .orderBy(desc(orders.id))
+      .limit(200);
+
+    return Promise.all(
+      rows.map(async (o) => {
+        const items = await db
+          .select({
+            id: orderItems.id,
+            productName: orderItems.productName,
+            productImage: orderItems.productImage,
+            quantity: orderItems.quantity,
+            unitPrice: orderItems.unitPrice,
+            itemTotal: orderItems.totalPrice,
+          })
+          .from(orderItems)
+          .where(eq(orderItems.orderId, o.id));
+
+        return { ...o, createdAt: o.createdAt.toISOString(), items };
+      })
+    );
+  }
+
+  /** Validated through the same state machine used by customer-facing cancellation. */
+  static async updateOrderStatus(orderId: number, nextStatus: string, adminUserId = 0, sellerOrderId?: number) {
+    if (sellerOrderId !== undefined) {
+      // Make sure the parcel really belongs to the order named in the URL.
+      const [parcel] = await db
+        .select({ id: sellerOrders.id })
+        .from(sellerOrders)
+        .where(sql`${sellerOrders.id} = ${sellerOrderId} AND ${sellerOrders.orderId} = ${orderId}`)
+        .limit(1);
+      if (!parcel) throw new Error('That seller parcel does not belong to this order.');
+      return OrderService.adminUpdateParcelStatus(sellerOrderId, nextStatus, adminUserId);
+    }
+    return OrderService.adminUpdateStatus(orderId, nextStatus, adminUserId);
+  }
+
+  static async getAllProducts() {
+    const rows = await db
+      .select({
+        id: products.id,
+        name: products.name,
+        slug: products.slug,
+        brand: products.brand,
+        categoryName: categories.name,
+        sellerStoreName: sellers.storeName,
+        sellerStatus: sellers.status,
+        basePrice: products.basePrice,
+        discountPrice: products.discountPrice,
+        stock: products.stock,
+        status: products.status,
+        isFeatured: products.isFeatured,
+        isDeal: products.isDeal,
+        rating: products.rating,
+        reviewCount: products.reviewCount,
+        createdAt: products.createdAt,
+      })
+      .from(products)
+      .leftJoin(categories, eq(products.categoryId, categories.id))
+      .leftJoin(sellers, eq(products.sellerId, sellers.id))
+      .orderBy(desc(products.id))
+      .limit(500);
+
+    return Promise.all(
+      rows.map(async (p) => {
+        const [primaryImage] = await db
+          .select({ imageUrl: productImages.imageUrl })
+          .from(productImages)
+          .where(eq(productImages.productId, p.id))
+          .orderBy(sql`${productImages.isPrimary} DESC, ${productImages.displayOrder} ASC`)
+          .limit(1);
+
+        return {
+          ...p,
+          rating: Number(p.rating || 0),
+          createdAt: p.createdAt.toISOString(),
+          primaryImage: primaryImage?.imageUrl || 'https://picsum.photos/seed/prod/600/600',
+        };
+      })
+    );
+  }
+
+  /**
+   * Gets (or lazily creates) a platform-owned seller record attributed to
+   * the given admin user, so admins can list products without first going
+   * through seller onboarding. This is idempotent: repeated calls for the
+   * same admin reuse the same store.
+   */
+  private static async getOrCreateAdminSeller(adminUserId: number) {
+    const [existingByUser] = await db.select({ id: sellers.id }).from(sellers).where(eq(sellers.userId, adminUserId)).limit(1);
+    if (existingByUser) return existingByUser;
+
+    const storeName = 'QazvuCart Official Store';
+    const slug = `qazvucart-official-${adminUserId}-${Date.now()}`;
+
+    try {
+      const [created] = await db
+        .insert(sellers)
+        .values({
+          userId: adminUserId,
+          storeName,
+          slug,
+          rating: '5.0',
+          reviewCount: 0,
+          // The platform's own store needs no approval workflow.
+          isVerified: true,
+          status: 'APPROVED',
+          approvedAt: new Date(),
+          approvedBy: adminUserId,
+        })
+        .returning({ id: sellers.id });
+
+      return created;
+    } catch {
+      // Another concurrent request created the seller first (unique
+      // constraint on sellers.userId) - just re-read it.
+      const [retry] = await db.select({ id: sellers.id }).from(sellers).where(eq(sellers.userId, adminUserId)).limit(1);
+      if (retry) return retry;
+      throw new Error('Failed to provision a store for this admin account');
+    }
+  }
+
+  static async createProduct(
+    adminUserId: number,
+    data: {
+      name: string;
+      brand: string;
+      categoryId: number;
+      basePrice: number;
+      discountPrice: number;
+      stock: number;
+      description: string;
+      imageUrl?: string;
+      isDeal?: boolean;
+      isFeatured?: boolean;
+    }
+  ) {
+    // Admin-created products don't require a separate seller signup: we
+    // attribute them to a platform-owned seller record, auto-creating one
+    // tied to this admin the first time it's needed.
+    const seller = await this.getOrCreateAdminSeller(adminUserId);
+
+    // Validate the category up front so a stale/mistyped category id fails
+    // with a clear, actionable message instead of a raw foreign-key error
+    // surfaced from the database driver.
+    const [category] = await db
+      .select({ id: categories.id })
+      .from(categories)
+      .where(eq(categories.id, data.categoryId))
+      .limit(1);
+    if (!category) {
+      throw new Error(
+        `Category #${data.categoryId} does not exist. Refresh the page and pick a category from the list.`
+      );
+    }
+
+    if (!data.basePrice || data.basePrice <= 0) {
+      throw new Error('Original price must be greater than 0.');
+    }
+    if (!data.discountPrice || data.discountPrice <= 0) {
+      throw new Error('Deal price must be greater than 0.');
+    }
+    if (data.discountPrice > data.basePrice) {
+      throw new Error('Deal price cannot be higher than the original price.');
+    }
+
+    const slug = `${data.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')}-${Date.now()}`;
+
+    let product: { id: number };
+    try {
+      [product] = await db
+        .insert(products)
+        .values({
+          sellerId: seller.id,
+          categoryId: data.categoryId,
+          name: data.name,
+          slug,
+          description: data.description,
+          basePrice: data.basePrice,
+          discountPrice: data.discountPrice,
+          stock: data.stock,
+          brand: data.brand,
+          isDeal: Boolean(data.isDeal),
+          isFeatured: Boolean(data.isFeatured),
+        })
+        .returning({ id: products.id });
+    } catch (err) {
+      throw new Error(AdminService.describeDbError(err, 'product'));
+    }
+
+    if (data.imageUrl) {
+      await db.insert(productImages).values({ productId: product.id, imageUrl: data.imageUrl, isPrimary: true, displayOrder: 1 });
+    }
+
+    return product;
+  }
+
+  /**
+   * Translates raw PostgreSQL error codes into messages an admin can act
+   * on, instead of leaking driver internals (or a bare "Failed query")
+   * back to the client.
+   */
+  private static describeDbError(err: unknown, entity: string): string {
+    const pgErr = err as { code?: string; constraint?: string; detail?: string } | null;
+    switch (pgErr?.code) {
+      case '23503': // foreign_key_violation
+        return `That ${entity} references something that no longer exists (e.g. a deleted category or seller). Please refresh and try again.`;
+      case '23505': // unique_violation
+        return `A ${entity} with that name/slug already exists. Try a slightly different title.`;
+      case '23502': // not_null_violation
+        return `A required field is missing for this ${entity}.`;
+      case '22P02': // invalid_text_representation (bad type cast)
+        return `One of the values provided is not in the expected format.`;
+      default:
+        return err instanceof Error ? err.message : `Failed to save ${entity}.`;
+    }
+  }
+
+  static async updateProduct(productId: number, data: Partial<{ discountPrice: number; stock: number; status: string }>) {
+    const updates: Partial<typeof products.$inferInsert> = { updatedAt: new Date() };
+    if (data.discountPrice !== undefined) updates.discountPrice = data.discountPrice;
+    if (data.stock !== undefined) updates.stock = data.stock;
+    if (data.status !== undefined) updates.status = data.status;
+
+    await db.update(products).set(updates).where(eq(products.id, productId));
+    return { success: true };
+  }
+
+  static async getAllUsers() {
+    const rows = await db
+      .select({
+        id: users.id,
+        username: users.username,
+        email: users.email,
+        phone: users.phone,
+        role: users.role,
+        isVerified: users.isVerified,
+        avatarUrl: users.avatarUrl,
+        createdAt: users.createdAt,
+      })
+      .from(users)
+      .orderBy(desc(users.id))
+      .limit(500);
+
+    return rows.map((u) => ({ ...u, createdAt: u.createdAt.toISOString() }));
+  }
+
+  static async updateUserRole(actingAdminId: number, userId: number, role: 'CUSTOMER' | 'SELLER' | 'ADMIN') {
+    if (userId === actingAdminId) {
+      throw new Error('You cannot change your own role.');
+    }
+    const [target] = await db.select({ id: users.id, role: users.role }).from(users).where(eq(users.id, userId)).limit(1);
+    if (!target) throw new Error('User not found');
+
+    // SELLER is no longer something you can hand out with a dropdown: it is
+    // granted only by approving a seller application, which also creates the
+    // store profile. A SELLER role without a store would be a dangling account.
+    if (role === 'SELLER' && target.role !== 'SELLER') {
+      throw new Error('Sellers must apply and be approved from the Sellers tab.');
+    }
+
+    // Demoting a seller also suspends their store so their products leave the storefront.
+    if (target.role === 'SELLER' && role !== 'SELLER') {
+      await SellerAccountService.suspendBecauseRoleRemoved(userId);
+    }
+
+    await db.update(users).set({ role, updatedAt: new Date() }).where(eq(users.id, userId));
+    return { success: true };
+  }
+}

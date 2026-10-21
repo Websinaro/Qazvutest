@@ -1,0 +1,220 @@
+'use client';
+
+import React, { useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
+import { motion, AnimatePresence } from 'motion/react';
+import { Bell, Check, CheckCheck, BellRing } from '@/src/components/ui/icons';
+import { useNotifications } from '@/src/context/NotificationContext';
+import { useAuth } from '@/src/context/AuthContext';
+import { useToast } from '@/src/context/ToastContext';
+import { useTheme } from '@/src/context/ThemeContext';
+
+function timeAgo(iso: string): string {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+}
+
+export function NotificationBell() {
+  const { isAuthenticated } = useAuth();
+  const { notifications, unreadCount, pushPermission, markRead, markAllRead, enablePush } = useNotifications();
+  const { error: showError, success: showSuccess } = useToast();
+  const { resolvedTheme } = useTheme();
+  // See Header.tsx's `iconSafeStyle` comment: scopes the OEM auto-dark
+  // repaint opt-out to just this icon, matched to the live theme.
+  const iconSafeStyle: React.CSSProperties = {
+    colorScheme: resolvedTheme === 'dark' ? 'only dark' : 'only light',
+  };
+  const [isEnablingPush, setIsEnablingPush] = useState(false);
+
+  const PUSH_FAILURE_MESSAGES: Record<string, string> = {
+    unsupported: "This browser doesn't support push notifications.",
+    not_configured: 'Push notifications are not set up on this server yet.',
+    permission_denied: 'Notifications were blocked. Enable them in your browser/site settings and try again.',
+    registration_failed: 'Could not enable push notifications. Please try again.',
+  };
+
+  const handleEnablePush = async () => {
+    setIsEnablingPush(true);
+    try {
+      const result = await enablePush();
+      if (result.success) {
+        showSuccess('Push notifications enabled');
+      } else {
+        showError(PUSH_FAILURE_MESSAGES[result.reason || 'registration_failed']);
+      }
+    } finally {
+      setIsEnablingPush(false);
+    }
+  };
+  const [isOpen, setIsOpen] = useState(false);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const onClickOutside = (e: MouseEvent) => {
+      if (panelRef.current && !panelRef.current.contains(e.target as Node)) setIsOpen(false);
+    };
+    document.addEventListener('mousedown', onClickOutside);
+    return () => document.removeEventListener('mousedown', onClickOutside);
+  }, [isOpen]);
+
+  if (!isAuthenticated) return null;
+
+  const showPushPrompt = pushPermission === 'default';
+
+  return (
+    // Not `relative` here on purpose: the dropdown below is positioned
+    // `absolute right-0`, and this component is only ever rendered inside
+    // Header's shared `relative` icon row. Anchoring to that wider,
+    // right-aligned container (instead of this narrow bell wrapper) keeps
+    // the panel on-screen — anchoring to the bell itself let the panel
+    // extend past the left edge of the viewport and get clipped by the
+    // global `overflow-x: hidden` on mobile.
+    <div ref={panelRef}>
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => setIsOpen((v) => !v)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            setIsOpen((v) => !v);
+          }
+        }}
+        className="relative grid place-items-center w-10 h-10 rounded-full text-neutral-700 dark:text-neutral-200 hover:bg-neutral-900/5 dark:hover:bg-white/10 active:scale-95 transition cursor-pointer select-none"
+        style={iconSafeStyle}
+        aria-label="Notifications"
+        title="Notifications"
+      >
+        <Bell className="w-[22px] h-[22px]" />
+        {unreadCount > 0 && (
+          <motion.span
+            key={unreadCount}
+            initial={{ scale: 0.5 }}
+            animate={{ scale: 1 }}
+            transition={{ type: 'spring', stiffness: 500, damping: 15 }}
+            className="absolute top-1 right-0.5 min-w-[17px] h-[17px] px-1 rounded-full bg-brand-700 text-white font-semibold text-[10px] grid place-items-center ring-2 ring-white dark:ring-neutral-950"
+          >
+            {unreadCount > 9 ? '9+' : unreadCount}
+          </motion.span>
+        )}
+      </div>
+
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: -8, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -8, scale: 0.97 }}
+            transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+            className="absolute right-0 mt-3 w-[22rem] max-w-[90vw] surface shadow-lift overflow-hidden z-50"
+          >
+            <div className="flex items-center justify-between px-4 py-3.5 border-b border-neutral-900/5 dark:border-white/10">
+              <h3 className="font-semibold text-sm text-neutral-950 dark:text-white">Notifications</h3>
+              {unreadCount > 0 && (
+                <button
+                  onClick={markAllRead}
+                  className="flex items-center gap-1 text-[11px] font-semibold text-brand-700 dark:text-brand-300 hover:text-brand-700 dark:hover:text-brand-200 cursor-pointer"
+                >
+                  <CheckCheck className="w-3.5 h-3.5" /> Mark all read
+                </button>
+              )}
+            </div>
+
+            {showPushPrompt && (
+              <div className="px-4 py-3 bg-brand-500/10 border-b border-brand-500/10 flex items-start gap-2.5">
+                <BellRing className="w-4 h-4 text-brand-700 dark:text-brand-300 shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-[11px] font-medium text-brand-900 dark:text-brand-100">
+                    Turn on push notifications for order updates & deals
+                  </p>
+                  <button
+                    onClick={handleEnablePush}
+                    disabled={isEnablingPush}
+                    className="mt-1.5 text-[11px] font-semibold text-brand-700 dark:text-brand-200 underline underline-offset-2 cursor-pointer disabled:opacity-50"
+                  >
+                    {isEnablingPush ? 'Enabling…' : 'Enable notifications'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {pushPermission === 'granted' && (
+              <div className="px-4 py-2 bg-emerald-500/10 border-b border-emerald-500/10 flex items-center gap-2">
+                <BellRing className="w-3.5 h-3.5 text-emerald-700 dark:text-emerald-400 shrink-0" />
+                <p className="text-[11px] font-semibold text-emerald-900 dark:text-emerald-300">Push notifications are on</p>
+              </div>
+            )}
+
+            {pushPermission === 'denied' && (
+              <div className="px-4 py-2 bg-neutral-900/[0.03] dark:bg-white/5 border-b border-neutral-900/5 dark:border-white/10 flex items-center gap-2">
+                <BellRing className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
+                <p className="text-[11px] font-medium text-neutral-500 dark:text-neutral-400">
+                  Notifications blocked — enable them in your browser&apos;s site settings to turn back on.
+                </p>
+              </div>
+            )}
+
+            <div className="max-h-96 overflow-y-auto">
+              {notifications.length === 0 ? (
+                <div className="py-10 text-center">
+                  <Bell className="w-8 h-8 text-neutral-300 dark:text-neutral-600 mx-auto mb-2" />
+                  <p className="text-xs text-neutral-500 dark:text-neutral-400 font-medium">You&apos;re all caught up</p>
+                </div>
+              ) : (
+                notifications.map((n) => {
+                  const content = (
+                    <div
+                      className={`px-4 py-3.5 border-b border-neutral-900/5 dark:border-white/5 last:border-0 flex gap-2.5 hover:bg-neutral-900/[0.03] dark:hover:bg-white/5 transition-colors cursor-pointer ${
+                        !n.isRead ? 'bg-brand-500/[0.06]' : ''
+                      }`}
+                      onClick={() => {
+                        if (!n.isRead) markRead(n.id);
+                        setIsOpen(false);
+                      }}
+                    >
+                      {!n.isRead && <span className="w-1.5 h-1.5 rounded-full bg-brand-600 mt-1.5 shrink-0" />}
+                      <div className={`flex-1 min-w-0 ${n.isRead ? 'pl-4' : ''}`}>
+                        <p className="text-[13px] font-semibold text-neutral-900 dark:text-neutral-100 line-clamp-1">{n.title}</p>
+                        <p className="text-[11px] text-neutral-600 dark:text-neutral-400 line-clamp-2 mt-0.5">{n.body}</p>
+                        <p className="text-[10px] text-neutral-400 dark:text-neutral-500 font-medium mt-1">{timeAgo(n.createdAt)}</p>
+                      </div>
+                      {!n.isRead && (
+                        <button
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            markRead(n.id);
+                          }}
+                          className="p-1 text-neutral-400 hover:text-emerald-600 dark:hover:text-emerald-400 shrink-0 h-fit cursor-pointer"
+                          title="Mark as read"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  );
+
+                  return n.link ? (
+                    <Link key={n.id} href={n.link} className="block">
+                      {content}
+                    </Link>
+                  ) : (
+                    <div key={n.id}>{content}</div>
+                  );
+                })
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
